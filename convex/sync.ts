@@ -206,50 +206,75 @@ import { Doc } from "./_generated/dataModel";
 // limitations under the License.
 
 async function getOncallUser(schedule: string): Promise<string> {
-  const token = process.env.PAGERDUTY_API_KEY;
+  const token = process.env.ROOTLY_API_KEY;
   if (token === undefined || token == "") {
-    throw "PagerDuty API Key not set";
+    throw "Rootly API Key not set";
   }
   const headers = {
-    Accept: "application/vnd.pagerduty+json;version=2",
-    Authorization: `Token token=${token}`,
+    Accept: "application/json",
+    Authorization: `Bearer ${token}`,
   };
 
-  const normal_url = `https://api.pagerduty.com/schedules/${schedule}/users`;
-  const override_url = `https://api.pagerduty.com/schedules/${schedule}/overrides`;
+  const url = `https://api.rootly.com/v1/schedules/${schedule}/shifts?include=user`;
   const now = new Date();
-  let since = new Date(now);
-  // The PagerDuty API gets all users on-call for a schedule within a time bound. The easiest way to get the current on-call is to set a tight 5 second time bound.
-  since.setSeconds(since.getSeconds() - 5);
-  let payload: Record<string, string> = {};
-  payload["since"] = since.toISOString();
-  payload["until"] = now.toISOString();
-  let parameters = new URLSearchParams(payload);
-  let query_string = `?${parameters.toString()}`;
 
-  let normal_schedule = await fetch(normal_url + query_string, {
-    headers: headers,
-  });
-  if (normal_schedule.status == 404) {
-    throw `Invalid schedule ${schedule}`;
+  try {
+    const response = await fetch(url, {
+      headers: headers,
+    });
+
+    if (response.status === 404) {
+      throw `Invalid schedule ${schedule}`;
+    }
+
+    if (!response.ok) {
+      throw `Rootly API error: ${response.status} ${response.statusText}`;
+    }
+
+    const data = await response.json();
+    const shifts = data.data || [];
+    const included = data.included || [];
+
+    // Find current shift (one that includes the current time)
+    const currentShift = shifts.find((shift: any) => {
+      const startsAt = new Date(shift.attributes.starts_at);
+      const endsAt = new Date(shift.attributes.ends_at);
+      return now >= startsAt && now <= endsAt;
+    });
+
+    if (!currentShift) {
+      return "No one :panic:";
+    }
+
+    // Find the user data from the included section
+    const userId = currentShift.relationships?.user?.data?.id;
+    if (!userId) {
+      return "No assigned user :panic:";
+    }
+
+    const user = included.find(
+      (item: any) => item.type === "users" && item.id === userId
+    );
+
+    if (!user) {
+      return "User not found :panic:";
+    }
+
+    let username = user.attributes.full_name || user.attributes.name;
+    if (!username) {
+      return "Deactivated user :panic:";
+    }
+
+    // Check if this shift is an override
+    if (currentShift.attributes.is_override) {
+      username += " (Override)";
+    }
+
+    return username;
+  } catch (error) {
+    console.error("Error fetching Rootly schedule:", error);
+    throw error;
   }
-  const response = await normal_schedule.json();
-  const users = response["users"];
-  const user = users[0];
-  if (!user) {
-    return "No one :panic:";
-  }
-  let username = user["name"];
-  if (!username) {
-    return "Deactivated user :panic:";
-  }
-  let override_schedule = await fetch(override_url + query_string, {
-    headers: headers,
-  });
-  if ((await override_schedule.json())["overrides"].length > 0) {
-    username += " (Override)";
-  }
-  return username;
 }
 
 async function getSlackTopic(channel: string): Promise<string> {
@@ -325,7 +350,7 @@ const updateSlackTopic = async function (
 };
 
 export const getConfig = internalQuery({
-  handler: async (ctx) => {
+  handler: async (ctx: any) => {
     return await ctx.db.query("configs").fullTableScan().collect();
   },
 });
@@ -344,7 +369,7 @@ async function performUpdate(config: Doc<"configs">) {
 }
 
 export default action({
-  handler: async (ctx) => {
+  handler: async (ctx: any) => {
     const configs = await ctx.runQuery(internal.sync.getConfig);
     await Promise.all(configs.map(performUpdate));
   },
