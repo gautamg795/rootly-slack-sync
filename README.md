@@ -2,7 +2,7 @@
 
 Syncs one or more Rootly on-call schedules to a Slack channel topic using a Convex backend.
 
-<img width="514" alt="image" src="https://github.com/get-convex/pagerduty-slack-sync/assets/3837919/4e66f744-9fd2-405e-8e84-27cdee8c7b37">
+<img width="514" alt="image" src="https://github.com/user-attachments/assets/91e0f322-22fa-40fc-9396-e99515dadd37">
 
 ## Initial Setup
 
